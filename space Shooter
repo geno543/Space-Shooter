@@ -4,7 +4,6 @@ import time
 import os
 import json
 import threading
-import sys
 
 try:
     from playsound import playsound
@@ -12,6 +11,7 @@ except ImportError:
     playsound = None
 
 from typing import Optional
+
 # Constants
 SCREEN_WIDTH = 80
 SCREEN_HEIGHT = 24
@@ -31,27 +31,27 @@ SOUND_POWERUP = 'powerup.wav'
 SOUND_GAMEOVER = 'gameover.wav'
 
 class Bullet:
-    def _init_(self, x, y, dy, char=BULLET_CHAR):
-        self.x = SCREEN_WIDTH // 2  # which is 40
-        self.y = SCREEN_HEIGHT - 2  # which is 22
+    def __init__(self, x, y, dy, char=BULLET_CHAR):
+        self.x = x
+        self.y = y
         self.dy = dy
         self.char = char
         self.alive = True
 
     def update(self):
         self.y += self.dy
-        if self.y < 1 or self.y >= SCREEN_HEIGHT:
+        if self.y < 1 or self.y >= SCREEN_HEIGHT - 1:
             self.alive = False
 
     def draw(self, screen):
-        if 0 < self.y < SCREEN_HEIGHT:
+        if 0 < self.y < SCREEN_HEIGHT - 1:
             try:
-                screen.addch(self.y, self.x, self.char)
+                screen.addch(int(self.y), int(self.x), self.char)
             except curses.error:
                 pass
 
 class Player:
-    def _init_(self, x, y):
+    def __init__(self, x, y):
         self.x = x
         self.y = y
         self.lives = 3
@@ -76,12 +76,12 @@ class Player:
 
     def draw(self, screen):
         try:
-            screen.addch(self.y, self.x, PLAYER_CHAR)
+            screen.addch(int(self.y), int(self.x), PLAYER_CHAR)
         except curses.error:
             pass
 
 class Enemy:
-    def _init_(self, x, y):
+    def __init__(self, x, y):
         self.x = x
         self.y = y
         self.alive = True
@@ -89,7 +89,7 @@ class Enemy:
 
     def update(self):
         self.y += 1
-        if self.y >= SCREEN_HEIGHT:
+        if self.y >= SCREEN_HEIGHT - 1:
             self.alive = False
 
     def shoot(self):
@@ -100,12 +100,12 @@ class Enemy:
     def draw(self, screen):
         if self.alive:
             try:
-                screen.addch(self.y, self.x, ENEMY_CHAR)
+                screen.addch(int(self.y), int(self.x), ENEMY_CHAR)
             except curses.error:
                 pass
 
 class Boss:
-    def _init_(self, x, y):
+    def __init__(self, x, y):
         self.x = x
         self.y = y
         self.health = BOSS_HEALTH
@@ -125,51 +125,63 @@ class Boss:
     def draw(self, screen):
         if self.alive:
             try:
-                screen.addch(self.y, self.x, BOSS_CHAR)
+                screen.addch(int(self.y), int(self.x), BOSS_CHAR)
+                # Draw health bar
+                health_bar = f"HP:{self.health}/{BOSS_HEALTH}"
+                screen.addstr(int(self.y) - 1, int(self.x) - len(health_bar)//2, health_bar)
             except curses.error:
                 pass
 
 class PowerUp:
-    def _init_(self, x, y):
+    def __init__(self, x, y):
         self.x = x
         self.y = y
         self.alive = True
 
     def update(self):
         self.y += 1
-        if self.y >= SCREEN_HEIGHT:
+        if self.y >= SCREEN_HEIGHT - 1:
             self.alive = False
 
     def draw(self, screen):
         if self.alive:
             try:
-                screen.addch(self.y, self.x, POWERUP_CHAR)
+                screen.addch(int(self.y), int(self.x), POWERUP_CHAR)
             except curses.error:
                 pass
 
 class HighScoreManager:
-    def _init_(self, filename):
+    def __init__(self, filename):
         self.filename = filename
         self.scores = self.load_scores()
 
     def load_scores(self):
         if os.path.exists(self.filename):
-            with open(self.filename, 'r') as f:
-                return json.load(f)
+            try:
+                with open(self.filename, 'r') as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, IOError):
+                return []
         return []
 
     def save_score(self, score):
         self.scores.append(score)
         self.scores = sorted(self.scores, reverse=True)[:10]
-        with open(self.filename, 'w') as f:
-            json.dump(self.scores, f)
+        try:
+            with open(self.filename, 'w') as f:
+                json.dump(self.scores, f)
+        except IOError:
+            pass
 
     def display_scores(self, screen):
         screen.clear()
-        screen.addstr(2, 10, "HIGH SCORES")
-        for idx, score in enumerate(self.scores):
-            screen.addstr(4 + idx, 10, f"{idx + 1}. {score}")
-        screen.addstr(SCREEN_HEIGHT - 2, 2, "Press any key to return")
+        try:
+            screen.addstr(2, 10, "HIGH SCORES", curses.A_BOLD)
+            for idx, score in enumerate(self.scores):
+                screen.addstr(4 + idx, 10, f"{idx + 1}. {score}")
+            screen.addstr(SCREEN_HEIGHT - 2, 2, "Press any key to return")
+        except curses.error:
+            pass
         screen.refresh()
         screen.getch()
 
@@ -177,18 +189,26 @@ def show_title(screen):
     title = [
         "   ___            __      __                ",
         "  / _ | ___  ___ / /____ / /  ___ ___ _  ___",
-        " / __ |/ _ \\/ -) __/ -) _ \\/ _ `/  ' \\/ -_)",
-        "// ||\\/\\/\\/\\/./\\,////\\_/ "
+        " / __ |/ _ \\/ -_) __/ -_) _ \\/ _ `/ ' \\/ -_)",
+        "/_/ |_|\\___/\\__/\\__/\\__/_//_/\\_,_/_/_/_/\\__/ "
     ]
     screen.clear()
-    for i, line in enumerate(title):
-        screen.addstr(5 + i, 10, line)
-    screen.addstr(15, 20, "Press any key to start")
+    try:
+        for i, line in enumerate(title):
+            screen.addstr(5 + i, 10, line)
+        screen.addstr(12, 20, "Controls:")
+        screen.addstr(13, 20, "A/D - Move Left/Right")
+        screen.addstr(14, 20, "W - Shoot")
+        screen.addstr(15, 20, "P - Pause")
+        screen.addstr(16, 20, "Q - Quit")
+        screen.addstr(19, 20, "Press any key to start", curses.A_BLINK)
+    except curses.error:
+        pass
     screen.refresh()
     screen.getch()
 
 class Game:
-    def _init_(self, screen):
+    def __init__(self, screen):
         self.screen = screen
         self.player = Player(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 2)
         self.enemies = []
@@ -198,6 +218,8 @@ class Game:
         self.running = True
         self.paused = False
         self.highscores = HighScoreManager(HIGHSCORE_FILE)
+        self.frame_count = 0
+        self.difficulty = 1.0
 
     def spawn_enemy(self):
         x = random.randint(1, SCREEN_WIDTH - 2)
@@ -208,37 +230,51 @@ class Game:
         self.powerups.append(PowerUp(x, 1))
 
     def update(self):
-        if random.random() < 0.05:
+        self.frame_count += 1
+        
+        # Increase difficulty over time
+        if self.frame_count % 500 == 0:
+            self.difficulty += 0.1
+
+        # Spawn enemies with increasing difficulty
+        if random.random() < 0.05 * self.difficulty:
             self.spawn_enemy()
+        
         if random.random() < 0.01:
             self.spawn_powerup()
 
+        # Update enemies
         for e in self.enemies:
             e.update()
             shot = e.shoot()
             if shot:
                 self.enemy_bullets.append(shot)
 
+        # Update boss
         if self.boss and self.boss.alive:
             self.boss.update()
             shot = self.boss.shoot()
             if shot:
                 self.enemy_bullets.append(shot)
 
+        # Update bullets
         for b in self.player.bullets:
             b.update()
 
         for eb in self.enemy_bullets:
             eb.update()
 
+        # Update powerups
         for p in self.powerups:
             p.update()
 
+        # Clean up dead objects
         self.player.bullets = [b for b in self.player.bullets if b.alive]
         self.enemy_bullets = [b for b in self.enemy_bullets if b.alive]
         self.enemies = [e for e in self.enemies if e.alive]
         self.powerups = [p for p in self.powerups if p.alive]
 
+        # Check bullet-enemy collisions
         for bullet in self.player.bullets:
             for enemy in self.enemies:
                 if enemy.alive and bullet.x == enemy.x and bullet.y == enemy.y:
@@ -246,8 +282,9 @@ class Game:
                     bullet.alive = False
                     self.player.score += 10
                     if playsound:
-                        threading.Thread(target=playsound, args=(SOUND_HIT,), daemon=True).start()
+                        threading.Thread(target=lambda: playsound(SOUND_HIT), daemon=True).start()
 
+        # Check enemy bullet-player collisions
         for eb in self.enemy_bullets:
             if eb.x == self.player.x and eb.y == self.player.y:
                 eb.alive = False
@@ -255,29 +292,43 @@ class Game:
                 if self.player.lives <= 0:
                     self.running = False
 
+        # Check powerup-player collisions
         for p in self.powerups:
             if p.x == self.player.x and p.y == self.player.y:
                 p.alive = False
                 self.player.weapon_type = min(3, self.player.weapon_type + 1)
                 if playsound:
-                    threading.Thread(target=playsound, args=(SOUND_POWERUP,), daemon=True).start()
+                    threading.Thread(target=lambda: playsound(SOUND_POWERUP), daemon=True).start()
 
-        if not self.enemies and not self.boss and random.random() < 0.02:
+        # Spawn boss when no enemies
+        if not self.enemies and not self.boss and self.player.score > 50 and random.random() < 0.02:
             self.boss = Boss(SCREEN_WIDTH // 2, 3)
 
-        if self.boss:
+        # Check bullet-boss collisions
+        if self.boss and self.boss.alive:
             for bullet in self.player.bullets:
-                if self.boss is not None and bullet.x == self.boss.x and bullet.y == self.boss.y:
-
+                if bullet.x == self.boss.x and bullet.y == self.boss.y:
                     bullet.alive = False
                     self.boss.health -= 1
+                    if playsound:
+                        threading.Thread(target=lambda: playsound(SOUND_HIT), daemon=True).start()
                     if self.boss.health <= 0:
                         self.boss.alive = False
                         self.boss = None
                         self.player.score += 100
 
+        # Check if enemies reached player
+        for enemy in self.enemies:
+            if enemy.y >= self.player.y:
+                enemy.alive = False
+                self.player.lives -= 1
+                if self.player.lives <= 0:
+                    self.running = False
+
     def draw(self):
         self.screen.clear()
+        
+        # Draw game objects
         self.player.draw(self.screen)
         for e in self.enemies:
             e.draw(self.screen)
@@ -289,24 +340,33 @@ class Game:
             p.draw(self.screen)
         if self.boss and self.boss.alive:
             self.boss.draw(self.screen)
-        self.screen.addstr(0, 2, f"Score: {self.player.score}  Lives: {self.player.lives}")
-        if self.paused:
-            self.screen.addstr(SCREEN_HEIGHT // 2, SCREEN_WIDTH // 2 - 5, "[PAUSED]")
+        
+        # Draw HUD
+        try:
+            self.screen.addstr(0, 2, f"Score: {self.player.score}  Lives: {self.player.lives}  Weapon: Lv{self.player.weapon_type}", curses.A_BOLD)
+            if self.paused:
+                pause_text = "[PAUSED - Press P to resume]"
+                self.screen.addstr(SCREEN_HEIGHT // 2, SCREEN_WIDTH // 2 - len(pause_text)//2, pause_text, curses.A_REVERSE)
+        except curses.error:
+            pass
+        
         self.screen.refresh()
 
     def run(self):
         self.screen.nodelay(True)
+        self.screen.timeout(50)
+        
         while self.running:
             try:
                 key = self.screen.getch()
-                if key == ord('a'):
+                if key == ord('a') or key == curses.KEY_LEFT:
                     self.player.move(-1)
-                elif key == ord('d'):
+                elif key == ord('d') or key == curses.KEY_RIGHT:
                     self.player.move(1)
-                elif key == ord('w'):
+                elif key == ord('w') or key == ord(' '):
                     self.player.shoot()
                     if playsound:
-                        threading.Thread(target=playsound, args=(SOUND_SHOOT,), daemon=True).start()
+                        threading.Thread(target=lambda: playsound(SOUND_SHOOT), daemon=True).start()
                 elif key == ord('p'):
                     self.paused = not self.paused
                 elif key == ord('q'):
@@ -316,33 +376,56 @@ class Game:
 
             if not self.paused:
                 self.update()
-                self.draw()
+            
+            self.draw()
             time.sleep(0.05)
 
         self.end_game()
 
     def end_game(self):
         if playsound:
-            threading.Thread(target=playsound, args=(SOUND_GAMEOVER,), daemon=True).start()
+            threading.Thread(target=lambda: playsound(SOUND_GAMEOVER), daemon=True).start()
+        
+        self.screen.clear()
+        try:
+            self.screen.addstr(SCREEN_HEIGHT // 2 - 2, SCREEN_WIDTH // 2 - 8, "GAME OVER!", curses.A_BOLD)
+            self.screen.addstr(SCREEN_HEIGHT // 2, SCREEN_WIDTH // 2 - 10, f"Final Score: {self.player.score}")
+            self.screen.addstr(SCREEN_HEIGHT // 2 + 2, SCREEN_WIDTH // 2 - 15, "Press any key to continue...")
+        except curses.error:
+            pass
+        self.screen.refresh()
+        self.screen.nodelay(False)
+        self.screen.getch()
+        
         self.highscores.save_score(self.player.score)
         self.highscores.display_scores(self.screen)
 
 def main(screen):
     curses.curs_set(0)
-    def main(screen):
-        curses.curs_set(0)
-        global SCREEN_WIDTH, SCREEN_HEIGHT
-        SCREEN_HEIGHT, SCREEN_WIDTH = screen.getmaxyx()
+    global SCREEN_WIDTH, SCREEN_HEIGHT
+    SCREEN_HEIGHT, SCREEN_WIDTH = screen.getmaxyx()
+    
+    # Initialize colors if available
+    if curses.has_colors():
+        curses.start_color()
+        curses.use_default_colors()
 
     show_title(screen)
+    
     while True:
         game = Game(screen)
         game.run()
-        screen.addstr(SCREEN_HEIGHT // 2, SCREEN_WIDTH // 2 - 6, "Play Again? (y/n)")
+        
+        screen.clear()
+        try:
+            screen.addstr(SCREEN_HEIGHT // 2, SCREEN_WIDTH // 2 - 8, "Play Again? (y/n)", curses.A_BOLD)
+        except curses.error:
+            pass
         screen.refresh()
+        screen.nodelay(False)
         key = screen.getch()
-        if key != ord('y'):
+        if key != ord('y') and key != ord('Y'):
             break
 
-if _name_ == '_main_':
+if __name__ == '__main__':
     curses.wrapper(main)
